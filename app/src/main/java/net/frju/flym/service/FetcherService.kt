@@ -137,20 +137,21 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
                     // We need to use the more recent date in order to be sure to not see old entries again
                     val acceptMinDate = max(readEntriesKeepDate, unreadEntriesKeepDate)
 
+                    var entries = mutableListOf<Entry>()
                     var newCount = 0
                     if (feedId == 0L || App.db.feedDao().findById(feedId)?.isGroup == true) {
-                        newCount = refreshFeeds(feedId, acceptMinDate)
+                        entries = refreshFeeds(feedId, acceptMinDate)
                     } else {
                         App.db.feedDao().findById(feedId)?.let {
                             try {
-                                newCount = refreshFeed(it, acceptMinDate)
+                                entries = refreshFeed(it, acceptMinDate)
                             } catch (e: Exception) {
                                 error("Can't fetch feed ${it.link}", e)
                             }
                         }
                     }
 
-                    showRefreshNotification(newCount)
+                    showRefreshNotification(entries)
                     mobilizeAllEntries()
                     downloadAllImages()
 
@@ -159,21 +160,25 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
             }
         }
 
-        private fun showRefreshNotification(itemCount: Int = 0) {
+        private fun showRefreshNotification(entries: MutableList<Entry>) {
 
             val shouldDisplayNotification =
                     context.getPrefBoolean(PrefConstants.REFRESH_NOTIFICATION_ENABLED, true)
 
-            if (shouldDisplayNotification && itemCount > 0) {
+            if (shouldDisplayNotification && entries.size > 0) {
                 if (!MainActivity.isInForeground) {
                     val unread = App.db.entryDao().countUnread
 
                     if (unread > 0) {
+                        /*
                         val text = context.resources.getQuantityString(
                                 R.plurals.number_of_new_entries,
                                 unread.toInt(),
                                 unread
                         )
+                        */
+
+                            val text = entries.first().title
 
                         val notificationIntent = Intent(
                                 context,
@@ -355,16 +360,16 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
             }
         }
 
-        private fun refreshFeeds(feedId: Long, acceptMinDate: Long): Int {
+        private fun refreshFeeds(feedId: Long, acceptMinDate: Long): MutableList<Entry> {
 
             val executor = Executors.newFixedThreadPool(THREAD_NUMBER) { r ->
                 Thread(r).apply {
                     priority = Thread.MIN_PRIORITY
                 }
             }
-            val completionService = ExecutorCompletionService<Int>(executor)
+            val completionService = ExecutorCompletionService<MutableList<Entry>>(executor)
 
-            var globalResult = 0
+            var globalResult = mutableListOf<Entry>()
             val feeds: List<Feed>
             if (feedId == 0L) {
                 feeds = App.db.feedDao().allNonGroupFeeds
@@ -374,7 +379,7 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
 
             for (feed in feeds) {
                 completionService.submit {
-                    var result = 0
+                    var result = mutableListOf<Entry>()
                     try {
                         result = refreshFeed(feed, acceptMinDate)
                     } catch (e: Exception) {
@@ -388,7 +393,7 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
             for (i in feeds.indices) {
                 try {
                     val f = completionService.take()
-                    globalResult += f.get()
+                    globalResult.addAll(globalResult.lastIndex + 1, f.get())
                 } catch (ignored: Exception) {
                 }
             }
@@ -398,7 +403,7 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
             return globalResult
         }
 
-        private fun refreshFeed(feed: Feed, acceptMinDate: Long): Int {
+        private fun refreshFeed(feed: Feed, acceptMinDate: Long): MutableList<Entry> {
             val entries = mutableListOf<Entry>()
             val entriesToInsert = mutableListOf<Entry>()
             val imgUrlsToDownload = mutableMapOf<String, List<String>>()
@@ -493,7 +498,7 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
 
             addImagesToDownload(imgUrlsToDownload)
 
-            return entries.size
+            return entries
         }
 
         private fun deleteOldEntries(keepDateBorderTime: Long, read: Long) {
