@@ -175,10 +175,13 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
                                 R.plurals.number_of_new_entries,
                                 unread.toInt(),
                                 unread
-                        )
-                        */
+                        )*/
 
-                            val text = entries.first().title
+                        val firstEntry = entries.first();
+
+                        val feed = App.db.feedDao().findById(firstEntry.feedId)
+
+                        val text = String.format("%s: %s", if(feed != null) feed.title else "", firstEntry.title)
 
                         val notificationIntent = Intent(
                                 context,
@@ -214,7 +217,8 @@ class FetcherService : IntentService(FetcherService::class.java.simpleName) {
                                 .setWhen(System.currentTimeMillis())
                                 .setAutoCancel(true)
                                 .setContentTitle(context.getString(R.string.flym_feeds))
-                                .setContentText(text)
+                                .setStyle(NotificationCompat.BigTextStyle()
+                                        .bigText(text))
 
                         context.notificationManager.notify(0, notifBuilder.build())
                     }
